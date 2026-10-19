@@ -308,18 +308,13 @@
         modelSelectionSettings: true
         backgroundMode: continuable
         # 子智能体是角色执行者（信息收集/资产梳理/漏洞发现/漏洞利用/内网渗透），**必须是叶子节点**：
-        # 靠提示词劝"不要再往下委派"是软的——模型完全可以无视。这里直接把委派工具从子会话的
-        # 工具目录里摘掉，子智能体连看都看不到 subagent / subagent_fork / workflow / ralph。
-        # maxDepth 同时收成 1 作为二道保险（默认 3 层太深，会白吃并发预算与上下文）。
+        # 靠提示词劝"不要再往下委派"是软的——模型完全可以无视。
+        # 老版本用 toolFilter 把委派工具从子会话工具目录里摘掉；dsh 0.2.1-rc.2 起
+        # tool-subagent 拒绝 toolFilter（挂载即抛错，整个预设判 broken）。现在的做法是：
+        # subagent / subagent_fork 两行都显式 maxDepth: 1（调用即被深度上限拒绝），
+        # workflow / ralph 整组不挂（它们派子任务时不带 maxDepth，能绕过深度上限）。
+        # 合起来，子智能体手上没有任何可用的派发工具。默认 3 层太深，会白吃并发预算与上下文。
         maxDepth: 1
-        # 注意：不能 deny `subagent` —— 它是这一行自己注册的 scoped 工具，不在全局工具库里，
-        # 写进 deny 会让 tools.restrict() 校验失败、整个委派路径报 "unknown global tool"（v0.8.0 踩过）。
-        # 子智能体拿不到 subagent_fork/workflow/ralph，加上 maxDepth: 1，实际已无派发能力。
-        toolFilter:
-          deny:
-            - subagent_fork
-            - workflow
-            - ralph
 
     # Fork omits model selection so provider/model stay equal to the parent and
     # the inherited history remains eligible for KV Cache reuse. This preset
@@ -332,6 +327,9 @@
         provider: fork
         toolName: subagent_fork
         backgroundMode: continuable
+        # 显式 1：省略时读服务默认（本插件的宿主补丁会把默认抬到 10），
+        # 子智能体就能用 fork 继续嵌。
+        maxDepth: 1
 
     # Production dsh does not install these optional providers. Install the
     # matching Bundle in this Profile and restart the Host, then copy this
@@ -362,19 +360,11 @@
       config:
         provider: spawn
 
-    - id: workflow-ptc
-      name: '@deepseek-ai/dsh-workflow-ptc'
-      config:
-        provider: spawn
-
-    - id: tool-workflow
-      name: '@deepseek-ai/dsh-tool-workflow'
-
-    - id: tool-ralph
-      name: '@deepseek-ai/dsh-tool-ralph'
-      config:
-        subagentProvider: spawn
-        maxRounds: 64
+    # workflow / ralph 不挂：dsh 0.2.1-rc.2 删掉 toolFilter 后，这两个工具的子任务
+    # 走 dsh-workflow-ptc 的 startActivation，请求里不带 maxDepth，于是深度 1 的
+    # 子智能体仍能经 workflow / ralph 继续往下派生，叶子约束就破了。指挥端人设
+    # 本来就只许用 subagent 派活，这里直接不提供这两组工具。
+    # （toolFilter 时代是 deny 掉它们，效果等价。）
 
 # ── remaining model-facing rows ─────────────────────────────────────────────
 
