@@ -21,16 +21,28 @@
 | 文件 | 改动 |
 |---|---|
 | `cordis.patch.yml` | `personaSuffix` 由 `Your working directory is {{cwd}}.` 改为 `""` |
-| `lib/identity.js` | `CWD_ONLY_SUFFIX` 改为空串（关掉官方身份后不再补 cwd 句） |
-| `lib/core.js` | `ALLOW_EXEC_PERSONA_BLOCK` / `ALLOW_EXEC_PERSONA_LINE` 去掉 `Working directory: {{cwd}}.` 前缀 |
-| `presets/redteam/agent.cordis.yml` | 删除 `toolFilter` 块；叶子约束只留 `maxDepth: 1` |
+| `lib/identity.js` | `CWD_ONLY_SUFFIX` 改为空串；`stripHarnessPersona` 不再把官方身份句重写成 `Working directory: {{cwd}}.`；`isCwdOnlyText` 把旧的 `Your working directory is {{cwd}}.` 也算作 cwd-only |
+| `lib/core.js` | `ALLOW_EXEC_PERSONA_BLOCK` / `ALLOW_EXEC_PERSONA_LINE` 去掉 `Working directory: {{cwd}}.` 前缀；旧句加入可丢弃判断 |
+| `presets/redteam/agent.cordis.yml` | 删除 `toolFilter`；`subagent` 与 `subagent_fork` 都显式 `maxDepth: 1`；不再挂 `workflow-ptc` / `tool-workflow` / `tool-ralph` |
 | `package.json` | 版本 `1.1.73-dsh021.1` |
 
-剩下的 `{{cwd}}` 出现在「匹配旧官方文本」的字符串里（剥离身份、清理旧 patch），
-不参与运行期注入，保持原样。
+剩下的 `{{cwd}}` 只出现在「匹配旧官方文本」的字符串里（判定是否可丢），
+不参与运行期注入。
 
-`maxDepth: 1` 仍是硬约束：子智能体看得到 `subagent` 等委派工具，但每次调用都会被
-深度上限拒绝。代价是不如 `toolFilter` 干净（工具目录里仍有委派工具）。
+### 叶子约束为什么不是只靠 maxDepth
+
+删掉 `toolFilter` 时第一版只留了 `maxDepth: 1`，复核发现不够：
+
+- `subagent_fork` 行省略 `maxDepth` 时会读服务默认值（本插件的宿主补丁会把默认抬到 10），
+  子智能体可以用 fork 继续嵌套 → 现在显式写 `1`。
+- `workflow-ptc` / `tool-workflow` / `tool-ralph` 派生任务时走
+  `subagents.startActivation`，请求里不带 `maxDepth`，`resolveChildDepth` 直接放行，
+  深度 1 的子智能体仍能经它们往下派 → 现在整组不挂。
+
+代价：这两个工具在指挥端（父会话）也没了。指挥端人设本来就只允许用 `subagent` 派活，
+所以实际影响是没有 workflow 编排和 ralph 循环。已知残余风险：Agent Teams 的
+`spawn_teammate` 不受 `maxDepth` 约束，上游的 `toolFilter` 时代也没有 deny 它，
+只靠人设（以及 `redteamRole` 角色稿）约束。
 
 ## 验证
 
