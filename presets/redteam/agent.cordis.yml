@@ -309,12 +309,12 @@
         backgroundMode: continuable
         # 子智能体是角色执行者（信息收集/资产梳理/漏洞发现/漏洞利用/内网渗透），**必须是叶子节点**：
         # 靠提示词劝"不要再往下委派"是软的——模型完全可以无视。
-        # 老版本用 toolFilter 把委派工具从子会话工具目录里摘掉；dsh 0.2.1-rc.2 起
-        # tool-subagent 拒绝 toolFilter（挂载即抛错，整个预设判 broken）。现在的做法是：
-        # subagent / subagent_fork 两行都显式 maxDepth: 1（调用即被深度上限拒绝），
-        # workflow / ralph 整组不挂（它们派子任务时不带 maxDepth，能绕过深度上限）。
-        # 合起来，子智能体手上没有任何可用的派发工具。默认 3 层太深，会白吃并发预算与上下文。
+        # dsh 0.2.1-rc.2 删掉了 toolFilter（挂载即抛错），官方替代是「用另一份 Agent Preset 跑子会话」：
+        # 这里指定 agentPreset: redteam-worker，子会话进那份预设后根本看不到任何派发工具；
+        # 指挥端（本预设）则保留完整工具面，包括 workflow / ralph。
+        # maxDepth: 1 作为二道保险（子会话万一拿到 tool 也会被深度上限拒绝）。
         maxDepth: 1
+        agentPreset: redteam-worker
 
     # Fork omits model selection so provider/model stay equal to the parent and
     # the inherited history remains eligible for KV Cache reuse. This preset
@@ -360,6 +360,21 @@
       config:
         provider: spawn
 
+    # workflow / ralph 只留在指挥端：子会话跑的是 redteam-worker 预设，
+    # 那份预设里没有这些行（它们的 startActivation 不带 maxDepth，能绕过深度上限）。
+    - id: workflow-ptc
+      name: '@deepseek-ai/dsh-workflow-ptc'
+      config:
+        provider: spawn
+
+    - id: tool-workflow
+      name: '@deepseek-ai/dsh-tool-workflow'
+
+    - id: tool-ralph
+      name: '@deepseek-ai/dsh-tool-ralph'
+      config:
+        subagentProvider: spawn
+        maxRounds: 64
     # workflow / ralph 不挂：dsh 0.2.1-rc.2 删掉 toolFilter 后，这两个工具的子任务
     # 走 dsh-workflow-ptc 的 startActivation，请求里不带 maxDepth，于是深度 1 的
     # 子智能体仍能经 workflow / ralph 继续往下派生，叶子约束就破了。指挥端人设

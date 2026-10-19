@@ -27,10 +27,13 @@
 | `lib/identity.js` | 新增 `cwdSuffixText()` / `cwdOfContext()` / `assemblyHasCwdContext()` / `fillCwdPlaceholders()`：宿主已下发 working-directory context 时后缀留空，否则用真实路径拼；最后一道闸把任何残留 `{{cwd}}` 换掉；`isCwdOnlyText` 用旧句指纹识别，避免误清用户内容 |
 | `lib/core.js` | 删掉无人引用的 `ALLOW_EXEC_PERSONA_BLOCK` / `ALLOW_EXEC_PERSONA_LINE`；新增 0.2.1 版 `system-prompt/assemble` 尾巴 patch（保留 `requiredContexts` 与 contexts 过滤） |
 | `lib/host-clean.js` | 识别 0.2.1 的 `fold-complete inject first` 标记和 `: [completeSection]` 尾巴，判断宿主是否已经洗过 |
-| `presets/redteam/agent.cordis.yml` | 删除 `toolFilter`；`subagent` 与 `subagent_fork` 都显式 `maxDepth: 1`；不再挂 `workflow-ptc` / `tool-workflow` / `tool-ralph` |
+| `presets/redteam/agent.cordis.yml` | 删除 `toolFilter`；`subagent` 行加 `agentPreset: redteam-worker`；`subagent_fork` 显式 `maxDepth: 1`；保留 `workflow` / `ralph`（指挥端完整工具面） |
+| `presets/redteam-worker/` | 新增：执行角色预设，从指挥预设裁剪掉 `delegation` 与锚点门，只留 shell / 文件 / 技能 / 红队落库工具 |
+| `lib/identity.js`（续） | `isRedteamPresetId` 把 `redteam-worker` 也算红队预设，角色稿注入才能在子会话生效 |
+| `lib/redteam/index.js` | 注册和安装两份预设；先注册执行端，因为指挥端的 `tool-subagent` 行挂载时会 `readDocument('redteam-worker')` |
 | `package.json` | 版本 `1.1.73-dsh021.2`，`dshTarget` 改为 `0.2.1-rc.2` |
 
-### 叶子约束为什么不是只靠 maxDepth
+### 叶子约束怎么保住的
 
 删掉 `toolFilter` 时第一版只留了 `maxDepth: 1`，复核发现不够：
 
@@ -38,12 +41,15 @@
   子智能体可以用 fork 继续嵌套 → 现在显式写 `1`。
 - `workflow-ptc` / `tool-workflow` / `tool-ralph` 派生任务时走
   `subagents.startActivation`，请求里不带 `maxDepth`，`resolveChildDepth` 直接放行，
-  深度 1 的子智能体仍能经它们往下派 → 现在整组不挂。
+  深度 1 的子智能体仍能经它们往下派。
 
-代价：这两个工具在指挥端（父会话）也没了。指挥端人设本来就只允许用 `subagent` 派活，
-所以实际影响是没有 workflow 编排和 ralph 循环。已知残余风险：Agent Teams 的
-`spawn_teammate` 不受 `maxDepth` 约束，上游的 `toolFilter` 时代也没有 deny 它，
-只靠人设（以及 `redteamRole` 角色稿）约束。
+所以最终方案是 0.2.1 推荐的那条路：**子会话用另一份预设跑**。
+`tool-subagent` 行指定 `agentPreset: redteam-worker`，子会话进入那份预设后
+根本没有派发工具（它连 `delegation` 段都没有）；指挥端继续拥有 workflow / ralph。
+`maxDepth: 1` 留作二道保险。
+
+已知残余风险：Agent Teams 的 `spawn_teammate` 仍在指挥端预设里，不受 `maxDepth`
+约束，上游 `toolFilter` 时代也没有 deny 它，只靠人设和 `redteamRole` 角色稿约束。
 
 ## 验证
 
